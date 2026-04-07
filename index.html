@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Absorb - Smooth Native Scroll</title>
+    <title>Absorb - Vertical Fibonacci Root with Original Dot</title>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
     <style>
         body, html {
@@ -14,12 +14,12 @@
             background-color: #050505;
             font-family: 'Pretendard', sans-serif;
             overflow-x: hidden;
-            /* 강제 잠금을 풀고 네이티브에 맡깁니다. 
-               대신 proxy-height가 100vh일 때는 자연스럽게 스크롤바가 안 생깁니다. */
-            overflow-y: auto; 
-            overscroll-behavior: none; /* 모바일에서 당겨서 새로고침 방지 */
+            /* 초기 스크롤은 잠가둡니다. */
+            overflow-y: hidden; 
+            overscroll-behavior: none;
         }
         
+        /* 캔버스는 화면에 고정, 내부 요소만 스크롤에 따라 이동하여 렌더링 */
         canvas {
             position: fixed;
             top: 0;
@@ -28,6 +28,7 @@
             z-index: 1;
         }
 
+        /* 가상의 스크롤 영역을 만들어주는 컨테이너 */
         #scroll-proxy {
             position: absolute;
             top: 0;
@@ -50,15 +51,16 @@
             padding-top: 2vh;
         }
 
+        /* 가로로 꽉 차게 늘어진 와이드 산세리프 타이포그래피 */
         .title {
-            font-size: 15vw; 
+            font-size: 15vw; /* 화면 너비에 반응 */
             font-weight: 900;
             line-height: 1;
-            color: #111; 
-            transform: scaleX(1.4); 
+            color: #111; /* 배경보다 살짝 밝은 다크 그레이 */
+            transform: scaleX(1.4); /* 가로로 강제 확장 */
             transform-origin: center;
             letter-spacing: -0.05em;
-            -webkit-text-stroke: 1px rgba(74, 222, 128, 0.2); 
+            -webkit-text-stroke: 1px rgba(74, 222, 128, 0.2); /* 은은한 녹색 테두리 */
         }
 
         .instruction {
@@ -92,69 +94,90 @@
         let width, height;
         let groundY; 
         
+        // 피보나치 수열 (글자로 사용)
         const fibonacci = [1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987];
         
-        let state = 'IDLE'; 
+        // 상태 변수
+        let state = 'IDLE'; // IDLE, DROPPING, GROWING, ACCUMULATING, FILLING_SCREEN
         
+        // 물리 엔진이 적용된 공 객체
         let dot = { 
             x: 0, 
             y: 0, 
-            vy: 0,          
-            gravity: 0.6,   
-            radius: 10 
+            vy: 0,          // Y축 속도
+            gravity: 0.6,   // 중력 가속도
+            radius: 10,
+            start_y: 0,     // IDLE 상태일 때 시작 높이
+            target_drop_height: 0 // 드롭 타겟 높이 (화면 70% 지점)
         };
         
-        let paths = []; 
-        let activeHeads = []; 
-        let pile = []; 
+        // 데이터 배열
+        let paths = []; // 자라난 프랙탈 뿌리의 텍스트들
+        let activeHeads = []; // 현재 자라고 있는 뿌리 끝단
+        let pile = []; // 바닥에 쌓인 텍스트들
         
+        // 메모리 부하 방지를 위한 최대 렌더링 파티클 수
         const MAX_PATHS = 4000;
         const MAX_PILE = 2500;
         const MAX_DEPTH = 4500; // 프랙탈이 자랄 최대 깊이
         
+        // 화질 개선(High DPI)을 위한 리사이즈 함수
         function resize() {
             const dpr = window.devicePixelRatio || 1;
             width = window.innerWidth;
             height = window.innerHeight;
 
+            // 실제 캔버스 픽셀 크기는 dpr을 곱해서 크게 만듦 (선명도 상승)
             canvas.width = width * dpr;
             canvas.height = height * dpr;
+            
+            // CSS 크기는 원래대로 지정
             canvas.style.width = width + 'px';
             canvas.style.height = height + 'px';
+            
+            // 렌더링 컨텍스트 스케일 조정 (화질 개선 핵심)
             ctx.scale(dpr, dpr);
             
+            // IDLE 상태일 때 초기 위치 세팅
+            dot.x = width / 2;
+            dot.start_y = height * 0.25; // 타이포그래피 바로 아래
+            dot.target_drop_height = height * 0.7; // 떨어지는 높이를 길게 설정 (화면 70% 지점)
+
             if (state === 'IDLE') {
-                dot.x = width / 2;
-                dot.y = height * 0.25; 
-                groundY = height * 0.7; 
+                dot.y = dot.start_y;
+                groundY = dot.target_drop_height; 
             }
         }
         window.addEventListener('resize', resize);
         resize();
 
+        // 초기화 (화면 메우기 후 리셋 시 호출)
         function resetSketch() {
             state = 'IDLE';
             dot.vy = 0;
-            dot.y = height * 0.25;
+            dot.y = dot.start_y;
             paths = [];
             activeHeads = [];
             pile = [];
             
-            // 리셋 시 스크롤 공간 원래대로 복구 및 최상단 이동
+            // 스크롤 및 레이아웃 초기화
             scrollProxy.style.height = '100vh';
-            window.scrollTo({ top: 0, behavior: 'auto' });
+            document.body.style.overflowY = 'hidden'; 
+            window.scrollTo({ top: 0, behavior: 'smooth' });
             guideText.style.opacity = 1;
         }
 
+        // 클릭 이벤트 (드롭 시작)
         const startDrop = () => {
             if (state === 'IDLE') {
                 state = 'DROPPING';
-                guideText.style.opacity = 0; 
+                guideText.style.opacity = 0; // 안내문 숨김
             }
         };
         window.addEventListener('mousedown', startDrop);
         window.addEventListener('touchstart', startDrop);
 
+        // 프랙탈 뿌리 객체 생성
         function createHead(x, y, angle, depth, generation) {
             return {
                 x: x, y: y,
@@ -162,10 +185,12 @@
                 depth: depth,
                 generation: generation,
                 life: 0,
+                // 마디를 세로로 더 길게 자라게 함
                 maxLife: 60 + Math.random() * 60 
             };
         }
 
+        // 피보나치 수열에서 값 가져오기
         function getFibonacciChar(generation) {
             return fibonacci[generation % fibonacci.length].toString();
         }
@@ -173,18 +198,25 @@
         function update() {
             let currentScrollY = window.scrollY;
 
+            // 1. 낙하 물리엔진
             if (state === 'DROPPING') {
-                dot.vy += dot.gravity; 
+                dot.vy += dot.gravity; // 중력 가속
                 dot.y += dot.vy;
                 
                 if (dot.y >= groundY) {
                     dot.y = groundY;
                     state = 'GROWING';
+                    
                     // 💡 핵심 픽스: 프레임마다 늘리지 않고 한 번에 충분한 스크롤 영역 확보
                     scrollProxy.style.height = MAX_DEPTH + 'px';
+                    // 네이티브 스크롤 잠금 해제
+                    document.body.style.overflowY = 'auto'; 
+
+                    // 아래쪽(90도)을 향해 시작
                     activeHeads.push(createHead(dot.x, groundY, 90, 0, 0));
                 }
             } 
+            // 2. 프랙탈 성장 & 쌓임
             else if (state === 'GROWING' || state === 'ACCUMULATING') {
                 let newHeads = [];
                 
@@ -194,6 +226,7 @@
                     let rad = head.angle * (Math.PI / 180);
                     let wobble = (Math.random() - 0.5) * 0.2; 
                     
+                    // X축 이동은 줄이고, Y축 이동을 늘려 세로로 길게 뻗게 함
                     head.x += Math.cos(rad + wobble) * 1.5;
                     head.y += Math.sin(rad + wobble) * 4.0;
                     
@@ -207,11 +240,156 @@
                             expVy: (Math.random() - 0.5) * 40
                         });
                         
+                        // 메모리 보호
                         if (paths.length > MAX_PATHS) paths.shift(); 
                     }
 
                     if (head.life >= head.maxLife) {
                         // 목표 깊이(MAX_DEPTH - 여백) 이전까지만 증식
                         if (head.y < MAX_DEPTH - 500 && head.depth < 12) {
+                            // 갈라지는 각도를 좁혀서(±10~15도) 아래로 뻗어가는 느낌 강조
                             let spreadAngle = 10 + Math.random() * 8;
-                            newHeads.
+                            newHeads.push(createHead(head.x, head.y, head.angle - spreadAngle, head.depth + 1, head.generation + 1));
+                            newHeads.push(createHead(head.x, head.y, head.angle + spreadAngle, head.depth + 1, head.generation + 1));
+                        } else {
+                            state = 'ACCUMULATING';
+                            pile.push({
+                                x: head.x, y: head.y,
+                                vx: (Math.random() - 0.5) * 2,
+                                vy: Math.random() * 3 + 3,
+                                char: getFibonacciChar(head.generation),
+                                size: Math.max(12, 30 - head.depth * 1.8),
+                                stopped: false,
+                                expVx: (Math.random() - 0.5) * 40,
+                                expVy: (Math.random() - 0.5) * 40
+                            });
+                            if (pile.length > MAX_PILE) pile.shift();
+                        }
+                    } else {
+                        newHeads.push(head); 
+                    }
+                });
+                
+                activeHeads = newHeads;
+
+                let stoppedCount = 0;
+                pile.forEach(p => {
+                    if (!p.stopped) {
+                        p.x += p.vx;
+                        p.y += p.vy;
+                        
+                        let distFromCenter = Math.abs(p.x - width/2);
+                        let moundHeight = Math.max(0, 400 - distFromCenter * 1.2);
+                        // 바닥(MAX_DEPTH) 기준으로 산 모양으로 쌓임
+                        let targetY = MAX_DEPTH - 100 + (Math.random() * 40) - moundHeight;
+                        
+                        if (p.y >= targetY) {
+                            p.y = targetY;
+                            p.stopped = true;
+                        }
+                    } else {
+                        stoppedCount++;
+                    }
+                });
+
+                // 쌓인 갯수가 임계점을 넘으면 화면 메우기 시작
+                if (stoppedCount > 400 && activeHeads.length === 0) {
+                    state = 'FILLING_SCREEN';
+                }
+            }
+            // 3. 마지막 장면: 화면을 꽉 메우는 팽창 효과
+            else if (state === 'FILLING_SCREEN') {
+                let allOutOfScreen = true;
+                const spreadSpeed = 1.1; 
+
+                const expandParticle = (p) => {
+                    p.x += p.expVx;
+                    p.y += p.expVy;
+                    p.expVx *= spreadSpeed; 
+                    p.expVy *= spreadSpeed;
+                    p.size += 5; // 글자 크기도 무한히 커짐
+
+                    if (
+                        p.x > -500 && p.x < width + 500 && 
+                        p.y > currentScrollY - 500 && p.y < currentScrollY + height + 500
+                    ) {
+                        allOutOfScreen = false;
+                    }
+                };
+
+                paths.forEach(expandParticle);
+                pile.forEach(expandParticle);
+
+                if (allOutOfScreen) {
+                    resetSketch();
+                }
+            }
+        }
+
+        function draw() {
+            update();
+
+            ctx.clearRect(0, 0, width, height);
+            ctx.save();
+            
+            // 캔버스를 스크롤된 위치만큼 올려서 그려줌 (실제 스크롤 효과)
+            let scrollY = window.scrollY;
+            ctx.translate(0, -scrollY);
+
+            // GROUND 경계선
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, groundY);
+            ctx.lineTo(width, groundY);
+            ctx.stroke();
+
+            // 공 (최초의 점 및 낙하 물리 효과)
+            if (state === 'IDLE' || state === 'DROPPING') {
+                ctx.fillStyle = '#4ade80'; // Green
+                ctx.beginPath();
+                ctx.arc(dot.x, dot.y, dot.radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 낙하 꼬리 (모션 블러 느낌)
+                if (state === 'DROPPING') {
+                    ctx.strokeStyle = 'rgba(74, 222, 128, 0.4)';
+                    ctx.lineWidth = dot.radius * 2;
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(dot.x, dot.y - dot.vy * 1.5);
+                    ctx.lineTo(dot.x, dot.y);
+                    ctx.stroke();
+                }
+            }
+
+            // 피보나치 텍스트 뿌리 그리기
+            ctx.fillStyle = '#4ade80'; // Green text
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            const renderParticles = (particles) => {
+                for(let i=0; i<particles.length; i++) {
+                    let p = particles[i];
+                    // 현재 스크롤 뷰포트에 보이는 것만 그려서 렌더링 최적화
+                    if (p.y > scrollY - p.size && p.y < scrollY + height + p.size) {
+                        ctx.font = `600 ${p.size}px Pretendard, sans-serif`;
+                        if(state === 'FILLING_SCREEN') ctx.globalCompositeOperation = 'screen';
+                        ctx.fillText(p.char, p.x, p.y);
+                    }
+                }
+            };
+
+            renderParticles(paths);
+            renderParticles(pile);
+
+            ctx.restore();
+            
+            requestAnimationFrame(draw);
+        }
+
+        draw();
+
+    </script>
+</body>
+</html>
