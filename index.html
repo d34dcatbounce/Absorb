@@ -3,38 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Absorb - Fractal Root Sketch</title>
+    <title>Absorb - Vertical Fibonacci Root</title>
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
     <style>
         body, html {
             margin: 0;
             padding: 0;
             width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background-color: #000;
-            font-family: 'Courier New', Courier, monospace;
+            background-color: #050505;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            overflow-x: hidden;
+            /* 스크롤을 위해 y축 오버플로우 허용 */
+            overflow-y: auto; 
         }
         canvas {
             display: block;
+            /* 고해상도 대응을 위해 CSS width/height는 100%로 두고 JS에서 속성 제어 */
+            width: 100%;
         }
         #ui-layer {
-            position: absolute;
-            top: 10px;
+            position: fixed; /* 스크롤해도 보이도록 고정 */
+            top: 20px;
             width: 100%;
             text-align: center;
-            color: black;
+            color: #050505;
             pointer-events: none;
             z-index: 10;
         }
         .title {
-            font-size: 3rem;
-            font-weight: bold;
-            letter-spacing: 5px;
+            font-size: 2.5rem;
+            font-weight: 800;
+            letter-spacing: 0.1em;
         }
         .instruction {
-            font-size: 0.9rem;
-            color: #666;
-            margin-top: 5px;
+            font-size: 0.85rem;
+            font-weight: 400;
+            color: #555;
+            margin-top: 8px;
+            letter-spacing: 0.05em;
         }
     </style>
 </head>
@@ -42,7 +48,7 @@
 
     <div id="ui-layer">
         <div class="title">ABSORB</div>
-        <div class="instruction">초록색 점을 클릭하세요</div>
+        <div class="instruction">초록색 점을 클릭하고 아래로 스크롤하세요</div>
     </div>
     
     <canvas id="sketch"></canvas>
@@ -52,54 +58,61 @@
         const ctx = canvas.getContext('2d');
         
         let width, height;
-        const groundY = 150; // 흰색(하늘)과 검은색(땅)의 경계선
+        // 전체 스크롤 영역의 높이 설정 (모바일 브라우저 캔버스 한계치 고려해 2500으로 설정)
+        const scrollHeight = 2500; 
+        const groundY = 150; 
         
-        // 피보나치 및 한글 텍스트 소스
-        const fibonacci = [1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
-        const hangul = ['가', '나', '다', '라', '마', '바', '사', '아', '자', '차', '카', '타', '파', '하', '텍', '스', '트', '뿌', '리'];
+        // 피보나치 수열 (글자로 사용)
+        const fibonacci = [1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597];
         
-        // 상태 변수
-        let state = 'IDLE'; // IDLE, DROPPING, GROWING, ACCUMULATING, ZOOMING_OUT
-        let dot = { x: 0, y: 80, radius: 8 };
+        let state = 'IDLE'; 
+        let dot = { x: 0, y: 100, radius: 6 };
         
-        // 데이터 배열
-        let paths = []; // 자라난 프랙탈 뿌리의 텍스트들
-        let activeHeads = []; // 현재 자라고 있는 뿌리 끝단
-        let pile = []; // 바닥에 쌓인 텍스트들
+        let paths = []; 
+        let activeHeads = []; 
+        let pile = []; 
         
         let zoom = 1.0;
-        let zoomSpeed = 0;
         
+        // 화질 개선(High DPI)을 위한 리사이즈 함수
         function resize() {
-            width = canvas.width = window.innerWidth;
-            height = canvas.height = window.innerHeight;
+            const dpr = window.devicePixelRatio || 1;
+            width = window.innerWidth;
+            height = scrollHeight; // 세로로 긴 캔버스
+
+            // 실제 캔버스 픽셀 크기는 dpr을 곱해서 크게 만듦 (선명도 상승)
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            
+            // CSS 크기는 원래대로 지정
+            canvas.style.width = width + 'px';
+            canvas.style.height = height + 'px';
+            
+            // 렌더링 컨텍스트 스케일 조정
+            ctx.scale(dpr, dpr);
+            
             dot.x = width / 2;
         }
         window.addEventListener('resize', resize);
         resize();
 
-        // 초기화 (줌아웃 후 회귀 시 호출)
         function resetSketch() {
             state = 'IDLE';
-            dot.y = 80;
+            dot.y = 100;
             paths = [];
             activeHeads = [];
             pile = [];
             zoom = 1.0;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        // 클릭 이벤트 (드롭 시작)
-        canvas.addEventListener('mousedown', (e) => {
-            if (state === 'IDLE') {
-                // 초록 점 근처를 클릭했거나, 그냥 화면 클릭 시 시작
-                state = 'DROPPING';
-            }
-        });
-        canvas.addEventListener('touchstart', (e) => {
+        // 클릭 이벤트 등록
+        const startDrop = () => {
             if (state === 'IDLE') state = 'DROPPING';
-        });
+        };
+        window.addEventListener('mousedown', startDrop);
+        window.addEventListener('touchstart', startDrop);
 
-        // 프랙탈 뿌리 객체 생성
         function createHead(x, y, angle, depth, generation) {
             return {
                 x: x, y: y,
@@ -107,88 +120,82 @@
                 depth: depth,
                 generation: generation,
                 life: 0,
-                maxLife: 30 + Math.random() * 50 // 마디의 길이
+                // 마디를 세로로 더 길게 자라게 함
+                maxLife: 50 + Math.random() * 80 
             };
         }
 
-        // 무작위 텍스트(피보나치 또는 한글) 반환
-        function getRandomChar(generation) {
-            if (Math.random() > 0.5) {
-                return fibonacci[generation % fibonacci.length].toString();
-            } else {
-                return hangul[Math.floor(Math.random() * hangul.length)];
-            }
+        // 피보나치 수열에서 값 가져오기
+        function getFibonacciChar(generation) {
+            return fibonacci[generation % fibonacci.length].toString();
         }
 
         function update() {
             if (state === 'DROPPING') {
-                dot.y += 5; // 물방울 낙하
-                // Ground 라인을 통과하면 뿌리로 변환
+                dot.y += 8; // 낙하 속도 증가
                 if (dot.y >= groundY) {
                     state = 'GROWING';
+                    // 아래쪽(90도)을 향해 시작
                     activeHeads.push(createHead(dot.x, groundY, 90, 0, 0));
                 }
             } 
             else if (state === 'GROWING' || state === 'ACCUMULATING') {
                 let newHeads = [];
                 
-                // 뿌리 자라기 로직
                 activeHeads.forEach(head => {
-                    head.life += 2;
+                    head.life += 2.5; // 성장 속도
                     
-                    // 방향에 따라 이동 (약간의 구불거림 추가)
                     let rad = head.angle * (Math.PI / 180);
-                    let wobble = (Math.random() - 0.5) * 0.5; 
-                    head.x += Math.cos(rad + wobble) * 2;
-                    head.y += Math.sin(rad + wobble) * 2;
+                    // 흔들림(wobble)을 줄여서 수직적인 느낌 강화
+                    let wobble = (Math.random() - 0.5) * 0.15; 
                     
-                    // 지나간 자리에 텍스트 저장
-                    if (head.life % 10 === 0) {
+                    // X축 이동은 줄이고, Y축 이동을 늘려 세로로 길게 뻗게 함
+                    head.x += Math.cos(rad + wobble) * 1.0;
+                    head.y += Math.sin(rad + wobble) * 3.5;
+                    
+                    if (head.life % 12 === 0) {
                         paths.push({
                             x: head.x, 
                             y: head.y, 
-                            char: getRandomChar(head.generation),
-                            size: Math.max(10, 20 - head.depth * 2) // 깊어질수록 글자 작아짐
+                            char: getFibonacciChar(head.generation),
+                            size: Math.max(10, 24 - head.depth * 1.5) // 글자 크기
                         });
                     }
 
-                    // 마디 끝에 도달하면 분기 (프랙탈)
                     if (head.life >= head.maxLife) {
-                        if (head.y < height - 150 && head.depth < 7) {
-                            // 두 갈래로 나뉨
-                            newHeads.push(createHead(head.x, head.y, head.angle - 25 + Math.random()*10, head.depth + 1, head.generation + 1));
-                            newHeads.push(createHead(head.x, head.y, head.angle + 25 - Math.random()*10, head.depth + 1, head.generation + 1));
+                        // 바닥(scrollHeight)에 닿기 전까지 분기
+                        if (head.y < height - 200 && head.depth < 10) {
+                            // 갈라지는 각도를 좁혀서(±10~15도) 아래로 뻗어가는 느낌 강조
+                            let spreadAngle = 10 + Math.random() * 5;
+                            newHeads.push(createHead(head.x, head.y, head.angle - spreadAngle, head.depth + 1, head.generation + 1));
+                            newHeads.push(createHead(head.x, head.y, head.angle + spreadAngle, head.depth + 1, head.generation + 1));
                         } else {
-                            // 바닥 근처거나 최대 깊이에 도달하면 글자 해체되어 떨어짐
                             state = 'ACCUMULATING';
                             pile.push({
                                 x: head.x, y: head.y,
-                                vx: (Math.random() - 0.5) * 2,
-                                vy: Math.random() * 2 + 2,
-                                char: getRandomChar(head.generation),
-                                size: Math.max(10, 20 - head.depth * 2),
+                                vx: (Math.random() - 0.5) * 1.5,
+                                vy: Math.random() * 2 + 3,
+                                char: getFibonacciChar(head.generation),
+                                size: Math.max(10, 24 - head.depth * 1.5),
                                 stopped: false
                             });
                         }
                     } else {
-                        newHeads.push(head); // 아직 덜 자랐으면 유지
+                        newHeads.push(head); 
                     }
                 });
                 
                 activeHeads = newHeads;
 
-                // 쌓이는 글자 더미(Pile) 물리 로직
                 let stoppedCount = 0;
                 pile.forEach(p => {
                     if (!p.stopped) {
                         p.x += p.vx;
                         p.y += p.vy;
                         
-                        // 바닥에 산처럼 쌓이게 하는 간단한 충돌 처리
-                        // 중앙(width/2)에 가까울수록 높게 쌓임
                         let distFromCenter = Math.abs(p.x - width/2);
-                        let moundHeight = Math.max(0, 300 - distFromCenter * 0.8);
-                        let targetY = height - 20 - moundHeight + (Math.random() * 20); // 약간의 노이즈
+                        let moundHeight = Math.max(0, 400 - distFromCenter * 1.2);
+                        let targetY = height - 50 - moundHeight + (Math.random() * 30); 
                         
                         if (p.y >= targetY) {
                             p.y = targetY;
@@ -199,16 +206,12 @@
                     }
                 });
 
-                // 화면이 글자로 가득 찼다고 판단되면 줌아웃 트리거
-                if (stoppedCount > 150) {
+                if (stoppedCount > 300) {
                     state = 'ZOOMING_OUT';
                 }
-                
-                // 만약 계속 증식하고 싶으면 빈 공간 클릭시 계속 드롭되게 할 수도 있지만, 
-                // 스케치 로직상 줌아웃-회귀 구조로 작성.
             }
             else if (state === 'ZOOMING_OUT') {
-                zoom -= 0.01;
+                zoom -= 0.005;
                 if (zoom <= 0) {
                     resetSketch();
                 }
@@ -220,61 +223,56 @@
 
             ctx.save();
             
-            // 줌아웃 효과를 위한 화면 스케일링
-            ctx.translate(width/2, height/2);
+            // 줌아웃의 기준점을 가장 아래 쌓인 곳으로 설정
+            ctx.translate(width/2, height - 200);
             ctx.scale(zoom, zoom);
-            ctx.translate(-width/2, -height/2);
+            ctx.translate(-width/2, -(height - 200));
 
-            // 1. 배경 그리기
+            // 배경
             ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, width, groundY); // Top (White)
+            ctx.fillRect(0, 0, width, groundY); 
             
-            ctx.fillStyle = '#0a0f0d';
-            ctx.fillRect(0, groundY, width, height - groundY); // Bottom (Black)
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(0, groundY, width, height - groundY); 
             
-            // GROUND 라인 및 텍스트
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 2;
+            // GROUND 경계선 (글자는 삭제, 선만 미니멀하게 유지)
+            ctx.strokeStyle = '#111111';
+            ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(0, groundY);
             ctx.lineTo(width, groundY);
             ctx.stroke();
-            
-            ctx.fillStyle = '#000000';
-            ctx.font = 'bold 24px Courier New';
-            ctx.textAlign = 'center';
-            ctx.fillText("GROUND", width/2, groundY - 10);
 
-            // 2. 드롭 (물방울)
+            // 물방울 드롭
             if (state === 'IDLE' || state === 'DROPPING') {
-                ctx.fillStyle = '#4ade80'; // Green
+                ctx.fillStyle = '#4ade80'; 
                 ctx.beginPath();
                 ctx.arc(dot.x, dot.y, dot.radius, 0, Math.PI * 2);
                 ctx.fill();
                 
-                // 물방울 꼬리 (드롭 중일 때)
                 if (state === 'DROPPING') {
                     ctx.strokeStyle = '#4ade80';
+                    ctx.lineWidth = 1.5;
                     ctx.beginPath();
-                    ctx.moveTo(dot.x, 80);
+                    ctx.moveTo(dot.x, 100);
                     ctx.lineTo(dot.x, dot.y);
                     ctx.stroke();
                 }
             }
 
-            // 3. 자라난 프랙탈 텍스트 뿌리 그리기
-            ctx.fillStyle = '#4ade80'; // Green text
+            // 뿌리 (텍스트) 그리기
+            ctx.fillStyle = '#4ade80'; 
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             
             paths.forEach(p => {
-                ctx.font = `bold ${p.size}px Courier New`;
+                ctx.font = `500 ${p.size}px Pretendard, sans-serif`;
                 ctx.fillText(p.char, p.x, p.y);
             });
             
-            // 4. 바닥에 해체된 텍스트 그리기
+            // 바닥에 쌓이는 텍스트
             pile.forEach(p => {
-                ctx.font = `bold ${p.size}px Courier New`;
+                ctx.font = `600 ${p.size}px Pretendard, sans-serif`;
                 ctx.fillText(p.char, p.x, p.y);
             });
 
@@ -283,7 +281,6 @@
             requestAnimationFrame(draw);
         }
 
-        // 애니메이션 시작
         draw();
 
     </script>
